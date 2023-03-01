@@ -1,6 +1,6 @@
--- Sumber data: https://fra-data.fao.org/assessments/fra/2020
+-- Data source: https://fra-data.fao.org/assessments/fra/2020
 
--- Lihat semua 200 data teratas
+-- View all top 200 data
 
 SELECT TOP 200 *
 FROM nature_db.dbo.Sheet1$
@@ -8,7 +8,7 @@ FROM nature_db.dbo.Sheet1$
 SELECT TOP 200 *
 FROM nature_db.dbo.annual$
 
--- Region tidak hanya memuat benua. Akan diekstrak regions menjadi benua (continent) dengan menggunakan local temporary table
+-- Regions don't just contain continents. Regions will be extracted into continents using the local temporary table
 -- North and Central America, Africa, Europe, Asia, Oceania, South America
 
 DROP TABLE IF EXISTS dbo.#TempContinent 
@@ -25,7 +25,7 @@ END as continent
 INTO dbo.#TempContinent
 FROM nature_db.dbo.Sheet1$
 
--- Persentase klasifikasi tipe hutan
+-- Percentage of forest type classification
 
 SELECT cont.continent, tbl.iso3, name, year, boreal, temperate, tropical, subtropical
 FROM nature_db.dbo.Sheet1$ tbl
@@ -33,8 +33,8 @@ LEFT JOIN dbo.#TempContinent cont
 ON tbl.iso3 = cont.iso3
 WHERE tbl.[1a_forestArea] IS NOT NULL
 
--- Dari pengamatan awal tabel, persentase klasifikasi tipe hutan berulang untuk setiap tahun (year)
--- Akan dicek apakah terdapat persentase berbeda untuk tahun (year) berbeda di setiap negara (name)
+-- From the initial observation of the table, the percentage of forest types is always repeated for every year (year)
+-- It will be checked whether there are different percentages for different years in each country (name)
 
 WITH unik AS
 (SELECT name, COUNT(DISTINCT boreal) n_boreal, COUNT(DISTINCT temperate) n_temperate, COUNT(DISTINCT tropical) n_tropical, COUNT(DISTINCT subtropical) n_subtropical
@@ -44,8 +44,8 @@ GROUP BY name
 SELECT COUNT(DISTINCT n_boreal) , COUNT(DISTINCT n_temperate) , COUNT(DISTINCT n_tropical) , COUNT(DISTINCT n_subtropical) 
 FROM unik
 
--- Karena tidak ada nilai yang lebih dari 1, maka dapat dipastikan bahwa persentase klasifikasi tipe hutan berulang untuk setiap tahun (year)
--- Persentase klasifikasi tipe hutan (data cleaning)
+-- Because there is no value greater than 1, it shows that the percentage of forest type classifications is repeated for each year.
+-- Percentage of forest type classification (data cleaning)
 
 SELECT cont.continent, name, boreal, temperate, tropical, subtropical
 FROM nature_db.dbo.Sheet1$ tbl
@@ -64,16 +64,16 @@ ON tbl.iso3 = cont.iso3
 WHERE tbl.[1a_forestArea] IS NOT NULL OR tbl.[1a_landArea] IS NOT NULL OR tbl.[1a_otherWoodedLand] IS NOT NULL
 ORDER BY name, year
 
--- Akan diperiksa apakah terjadi perubahan land_area di setiap negara
+--Will check whether land_area changes occur for each country
 
 SELECT name, MAX(tbl.[1a_landArea]) - MIN(tbl.[1a_landArea])
 FROM nature_db.dbo.Sheet1$ tbl
 GROUP BY name
 HAVING MAX(tbl.[1a_landArea]) - MIN(tbl.[1a_landArea]) <> 0
 
--- Tidak terdapat perubahan land_area di setiap negara
+-- There is no change in land_area for each country
 
--- Max - Min forest_area terhadap tahun di setiap negara
+-- Max - Min forest_area by year for each country
 
 SELECT DISTINCT cont.continent, name, 
     ROUND(FIRST_VALUE(tbl.[1a_forestArea]) OVER (PARTITION BY name ORDER BY year DESC) - FIRST_VALUE(tbl.[1a_forestArea]) OVER (PARTITION BY name ORDER BY year), 2) AS forestArea_change
@@ -83,7 +83,7 @@ ON tbl.iso3 = cont.iso3
 WHERE tbl.[1a_forestArea] IS NOT NULL
 ORDER BY name
 
--- Max - Min otherWoodedLand terhadap tahun di setiap negara
+-- Max - Min otherWoodedLand by year for each country
 
 SELECT DISTINCT cont.continent, name, 
     ROUND(FIRST_VALUE(tbl.[1a_otherWoodedLand]) OVER (PARTITION BY name ORDER BY year DESC) - FIRST_VALUE(tbl.[1a_otherWoodedLand]) OVER (PARTITION BY name ORDER BY year), 2) AS otherWoodedLand_change
@@ -92,7 +92,6 @@ LEFT JOIN dbo.#TempContinent cont
 ON tbl.iso3 = cont.iso3
 WHERE tbl.[1a_otherWoodedLand] IS NOT NULL
 ORDER BY name
-
 
 -- 1b Forest characteristics
 
@@ -109,7 +108,6 @@ WHERE (tbl.[1b_naturallyRegeneratingForest] IS NOT NULL OR
     tbl.[year] = 2010 OR
     tbl.[year] = 2020)
 ORDER BY name, year
-
 
 -- 1c Primary forest and special forest categories
 
@@ -180,49 +178,3 @@ WHERE (tbl.[1f_agroforestry] IS NOT NULL OR
     tbl.[year] = 2020)
 ) AS t2
 ON t1.name = t2.name AND t1.year = t2.year
-
-WITH t3 AS
-(SELECT cont.continent, name, year,
-    CAST(REPLACE(tbl.[1f_agroforestry], ',', '.') AS float)*1000 AS Agroforestry,
-    CAST(REPLACE(tbl.[1f_other], ',', '.') AS float)*1000 AS Other,
-    CAST(REPLACE(tbl.[1f_palms], ',', '.') AS float)*1000 AS Palms,
-    CAST(REPLACE(tbl.[1f_treeOrchards], ',', '.') AS float)*1000 AS "Tree Orchards",
-    CAST(REPLACE(tbl.[1f_treesUrbanSettings], ',', '.') AS float) *1000 AS "Trees in Urban Settings"
-FROM nature_db.dbo.Sheet1$ tbl
-LEFT JOIN dbo.#TempContinent cont
-ON tbl.iso3 = cont.iso3
-WHERE (tbl.[1f_agroforestry] IS NOT NULL OR
-    tbl.[1f_other] IS NOT NULL OR
-    tbl.[1f_palms] IS NOT NULL OR
-    tbl.[1f_treeOrchards] IS NOT NULL OR
-    tbl.[1f_treesUrbanSettings] IS NOT NULL) AND
-    (tbl.[year] = 1990 OR
-    tbl.[year] = 2000 OR
-    tbl.[year] = 2010 OR
-    tbl.[year] = 2020)
-)
-SELECT t3.continent, t3.year, SUM(t3.Palms)
-FROM t3
-GROUP BY t3.continent, t3.year
-ORDER BY t3.continent
-
-
-SELECT cont.continent, name, year,
-    CAST(REPLACE(tbl.[1f_agroforestry], ',', '.') AS float)*1000 AS Agroforestry,
-    CAST(REPLACE(tbl.[1f_other], ',', '.') AS float)*1000 AS Other,
-    CAST(REPLACE(tbl.[1f_palms], ',', '.') AS float)*1000 AS Palms,
-    CAST(REPLACE(tbl.[1f_treeOrchards], ',', '.') AS float)*1000 AS "Tree Orchards",
-    CAST(REPLACE(tbl.[1f_treesUrbanSettings], ',', '.') AS float) *1000 AS "Trees in Urban Settings"
-FROM nature_db.dbo.Sheet1$ tbl
-LEFT JOIN dbo.#TempContinent cont
-ON tbl.iso3 = cont.iso3
-WHERE (tbl.[1f_agroforestry] IS NOT NULL OR
-    tbl.[1f_other] IS NOT NULL OR
-    tbl.[1f_palms] IS NOT NULL OR
-    tbl.[1f_treeOrchards] IS NOT NULL OR
-    tbl.[1f_treesUrbanSettings] IS NOT NULL) AND
-    (tbl.[year] = 1990 OR
-    tbl.[year] = 2000 OR
-    tbl.[year] = 2010 OR
-    tbl.[year] = 2020) AND
-    cont.continent = 'South America'
